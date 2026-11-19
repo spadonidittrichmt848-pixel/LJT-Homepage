@@ -1,0 +1,29 @@
+name: Diagnostic Pages enablement
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect repo permissions and try enabling Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo '== repo permissions block =='
+          curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY" > /tmp/repo.json
+          python3 -c "import json; d=json.load(open('/tmp/repo.json')); print('has_pages:', d.get('has_pages')); print('permissions:', json.dumps(d.get('permissions')))"
+          echo '== attempt 1: create with build_type=workflow =='
+          curl -sS -w '\nHTTP:%{http_code}\n' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" -d '{"build_type":"workflow"}' || true
+          echo '== attempt 2: create with legacy source =='
+          curl -sS -w '\nHTTP:%{http_code}\n' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" -d '{"source":{"branch":"master","path":"/"}}' || true
+          echo '== attempt 3: switch build_type to workflow =='
+          curl -sS -w '\nHTTP:%{http_code}\n' -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" -d '{"build_type":"workflow"}' || true
+          echo '== pages site state after attempts =='
+          curl -sS -w '\nHTTP:%{http_code}\n' -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" || true
