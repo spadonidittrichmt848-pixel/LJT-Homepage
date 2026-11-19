@@ -1,29 +1,70 @@
-name: Diagnostic Pages enablement
+name: Verify Jekyll build
 
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
-  diag:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Inspect repo permissions and try enabling Pages
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1.328.0
+        with:
+          ruby-version: '3.1'
+          bundler-cache: true
+          cache-version: 0
+      - name: Install UglifyJS
+        run: npm install -g uglify-js
+      - name: Minify JS files
         run: |
-          echo '== repo permissions block =='
-          curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY" > /tmp/repo.json
-          python3 -c "import json; d=json.load(open('/tmp/repo.json')); print('has_pages:', d.get('has_pages')); print('permissions:', json.dumps(d.get('permissions')))"
-          echo '== attempt 1: create with build_type=workflow =='
-          curl -sS -w '\nHTTP:%{http_code}\n' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" -d '{"build_type":"workflow"}' || true
-          echo '== attempt 2: create with legacy source =='
-          curl -sS -w '\nHTTP:%{http_code}\n' -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" -d '{"source":{"branch":"master","path":"/"}}' || true
-          echo '== attempt 3: switch build_type to workflow =='
-          curl -sS -w '\nHTTP:%{http_code}\n' -X PUT -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" -d '{"build_type":"workflow"}' || true
-          echo '== pages site state after attempts =='
-          curl -sS -w '\nHTTP:%{http_code}\n' -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/pages" || true
+          uglifyjs assets/js/plugins/jquery.greedy-navigation.js assets/js/_main.js assets/js/theme.js -c -m -o assets/js/main.min.js
+      - name: Build with Jekyll
+        run: |
+          bundle exec jekyll build -q
+          echo "JEKYLL BUILD OK"
+        env:
+          JEKYLL_ENV: production
+      - name: Inspect generated site
+        run: |
+          echo '== site root =='
+          ls _site | head -40
+          echo '== home page checks =='
+          grep -c 'Junteng Liu' _site/index.html || echo 'FAIL: name not found on home'
+          grep -c 'SynLogic' _site/index.html || echo 'FAIL: SynLogic not on home'
+          grep -c 'HKUST NLP Group' _site/index.html || echo 'FAIL: HKUST NLP Group missing'
+          grep -c 'jliugi@connect.ust.hk' _site/index.html || echo 'FAIL: email missing on home'
+          grep -c 'Vicent0205' _site/index.html || echo 'FAIL: github missing'
+          grep -c 'tbK9jl4AAAAJ' _site/index.html || echo 'FAIL: scholar missing'
+          grep -c 'junteng88716710' _site/index.html || echo 'FAIL: twitter missing'
+          grep -c 'Zhiyuan Honor Scholarship' _site/index.html || echo 'FAIL: award missing'
+          grep -c 'MINIMAX' _site/index.html || echo 'FAIL: MINIMAX missing'
+          grep -c 'Tencent WXG' _site/index.html || echo 'FAIL: Tencent WXG missing'
+          grep -c 'Shanghai AI Lab' _site/index.html || echo 'FAIL: Shanghai AI Lab missing'
+          grep -c 'Shanghai Jiao Tong University' _site/index.html || echo 'FAIL: SJTU missing'
+          grep -c 'Hong Kong University of Science and Technology' _site/index.html || echo 'FAIL: HKUST missing'
+          grep -c 'Junxian He' _site/index.html || echo 'FAIL: Junxian He missing'
+          grep -c 'Perception Bottleneck' _site/index.html || echo 'FAIL: VLM chart paper missing'
+          grep -c 'Universal Truthfulness Hyperplane' _site/index.html || echo 'FAIL: truthfulness paper missing'
+          grep -c 'In-Context Sharpness' _site/index.html || echo 'FAIL: sharpness paper missing'
+          grep -c 'C-Eval' _site/index.html || echo 'FAIL: C-Eval missing'
+          grep -c 'Composing Parameter-Efficient' _site/index.html || echo 'FAIL: composing PEFT missing'
+          grep -c 'ICML 2024' _site/index.html || true
+          grep -c 'NeurIPS 2023' _site/index.html || true
+          grep -c 'EMNLP 2024' _site/index.html || true
+          echo '== template leftovers check (should be 0) =='
+          grep -c 'Paper Title Number' _site/index.html || echo 'OK: no sample publications on home'
+          grep -rc 'Your Name' _site/index.html || echo 'OK: no Your Name placeholder'
+          echo '== publications page =='
+          ls _site/publications/ | head
+          for f in _site/publication/*/index.html; do echo "--- $f"; grep -o '<title>[^<]*' "$f" | head -1; done
+        env:
+          JEKYLL_ENV: production
